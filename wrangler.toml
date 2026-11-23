@@ -1,0 +1,16 @@
+name = "seiton-social-orchestrator"
+main = "cloudflare/worker.ts"
+compatibility_date = "2025-11-01"
+
+[assets]
+directory = "cloudflare/dist"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[[kv_namespaces]]
+binding = "SEITON_KV"
+id = "29be7ae07c30497e9c4cc74c42a08f94"
+
+[vars]
+META_API_BASE_URL = "https://api.meta.ai/v1"
+DRY_RUN = "true"
