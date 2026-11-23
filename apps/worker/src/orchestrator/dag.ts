@@ -15,6 +15,7 @@ import {
   agentRuns,
   campaigns,
   contentAssets,
+  getMuseRuntimeSettings,
   getPerformanceMemory,
   getSharedDb,
   insights,
@@ -228,7 +229,8 @@ export async function executeCampaignDag(
   options: ExecuteCampaignOptions = {}
 ): Promise<CampaignExecutionSummary> {
   const db = options.db ?? getSharedDb();
-  const provider = options.provider ?? createModelProvider();
+  const runtimeSettings = getMuseRuntimeSettings(db);
+  const provider = options.provider ?? createModelProvider(runtimeSettings);
   const profileManager = options.profileManager ?? new BrowserProfileManager();
 
   const campaign = db.select().from(campaigns).where(eq(campaigns.id, campaignId)).get();
@@ -791,6 +793,7 @@ export async function executeCampaignDag(
                 mediaAbsolutePath: mediaAbs,
                 mediaSha256: asset.mediaSha256,
                 dryRun: effectiveDryRun,
+                livePlatformAutomation: runtimeSettings.livePlatformAutomation,
                 simulateChallenge,
               };
 

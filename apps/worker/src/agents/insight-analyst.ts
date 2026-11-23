@@ -3,6 +3,7 @@ import {
   InsightReportSchema,
   PerformanceMemory,
   Platform,
+  getSkillSystemPrompt,
 } from "@seiton/shared";
 import { ModelProvider } from "../models/provider";
 
@@ -34,8 +35,7 @@ export async function runInsightAnalystAgent(
   const result = await provider.generateStructured({
     role: "INSIGHT",
     schema: InsightReportSchema,
-    systemPrompt:
-      "You are the Insight Analyst Agent (Muse Wonder). Synthesize campaign performance metrics into actionable winning patterns and update PerformanceMemory for the next cycle.",
+    systemPrompt: getSkillSystemPrompt("INSIGHT"),
     userPrompt: `Analyze ${input.metrics.length} publish job metrics for campaign ${input.campaignId}.`,
     contextData: {
       campaignId: input.campaignId,

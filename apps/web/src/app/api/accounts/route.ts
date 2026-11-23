@@ -5,6 +5,7 @@ import {
   accounts,
   encryptSecret,
   getSharedDb,
+  purgeDummyAccounts,
   redactSecrets,
 } from "@seiton/shared";
 import { emitPipelineEvent } from "@seiton/worker";
@@ -133,6 +134,41 @@ export async function PATCH(request: Request) {
     });
   } catch (error) {
     const msg = redactSecrets(error instanceof Error ? error.message : "Failed");
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const mode = searchParams.get("mode");
+    const id = searchParams.get("id");
+    const db = getSharedDb();
+
+    if (mode === "purge_dummies") {
+      const removed = purgeDummyAccounts(db);
+      emitPipelineEvent({
+        type: "account:update",
+        status: "IDLE",
+        message: `${removed} akun dummy bawaan dihapus. Tambahkan akun asli Anda melalui Wizard Email + OTP.`,
+      });
+      return NextResponse.json({ removed });
+    }
+
+    if (!id) {
+      return NextResponse.json({ error: "Parameter id atau mode=purge_dummies wajib diisi" }, { status: 400 });
+    }
+
+    db.delete(accounts).where(eq(accounts.id, id)).run();
+    emitPipelineEvent({
+      type: "account:update",
+      accountId: id,
+      status: "DISABLED",
+      message: `Akun ${id} dihapus dari Account Vault.`,
+    });
+    return NextResponse.json({ deleted: id });
+  } catch (error) {
+    const msg = redactSecrets(error instanceof Error ? error.message : "Delete failed");
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

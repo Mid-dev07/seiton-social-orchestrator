@@ -21,6 +21,11 @@ import {
   setGlobalPaused,
   AccountSessionActionSchema,
   OperatorLoginInputSchema,
+  evaluateAntiSlopCompliance,
+  getMuseRuntimeSettings,
+  getSafeMuseSettings,
+  purgeDummyAccounts,
+  saveMuseSettings,
   eq,
   z,
 } from "@seiton/shared";
@@ -423,6 +428,51 @@ describe("Seiton-Social Media Milestone 1 Verification", () => {
       expect(asset.mediaPath).toMatch(/\.svg$/);
       expect(fs.existsSync(path.resolve(resolveWorkspaceRoot(), asset.mediaPath!))).toBe(true);
     }
+
+    db.$client.close();
+  });
+
+  it("7. Anti-slop guard, encrypted Muse AI settings, and purgeDummyAccounts behavior", () => {
+    const slopHit = evaluateAntiSlopCompliance(
+      "Di era digital yang serba cepat ini, Seiton bukan sekadar alat, melainkan game-changer revolusioner."
+    );
+    expect(slopHit.passed).toBe(false);
+    expect(slopHit.hits.length).toBeGreaterThanOrEqual(3);
+
+    const qaSlop = evaluateCampaignAntiDuplicate([
+      {
+        accountId: "acc-real-1",
+        platform: "x",
+        fullText: "Di era digital yang serba cepat, kasir Seiton bukan sekadar aplikasi biasa.",
+        aspectRatio: "1:1",
+        mediaSha256: "unique_hash_slop_1",
+      },
+    ]);
+    expect(qaSlop.allPassed).toBe(false);
+    expect(qaSlop.results[0]!.notes.some((n) => n.includes("AI-slop"))).toBe(true);
+
+    const db = createTempTestDb();
+    const saved = saveMuseSettings(db, {
+      baseUrl: "https://api.meta.ai/v1",
+      apiKey: "meta_live_secret_token_xyz123",
+      orchestratorModel: "muse-wonder-1.0",
+      specialistModel: "muse-spark-1.3",
+      guardModel: "muse-ember-1.0",
+      imageModel: "muse-image-1.0",
+      livePlatformAutomation: true,
+      liveProxyEnabled: false,
+    });
+    expect(saved.hasApiKey).toBe(true);
+    expect(saved.maskedApiKey).not.toContain("secret_token");
+    expect(getSafeMuseSettings(db).hasApiKey).toBe(true);
+    expect(getMuseRuntimeSettings(db).apiKey).toBe("meta_live_secret_token_xyz123");
+
+    const removed = purgeDummyAccounts(db);
+    expect(removed).toBe(10);
+    expect(db.select().from(accounts).all()).toHaveLength(0);
+    // Must not re-seed dummy accounts after purge
+    expect(seedDefaultSeitonAccounts(db)).toBe(0);
+    expect(db.select().from(accounts).all()).toHaveLength(0);
 
     db.$client.close();
   });

@@ -1,3 +1,4 @@
+import { evaluateAntiSlopCompliance } from "./agent-skills";
 import { AspectRatio, PLATFORM_LIMITS, Platform } from "./schemas";
 
 const HARD_BANNED_TERMS = [
@@ -175,6 +176,11 @@ export function evaluateCampaignAntiDuplicate(
       if (banned && normalizedContent.includes(banned)) {
         notes.push(`Mengandung frasa terlarang: "${banned}"`);
       }
+    }
+
+    const antiSlop = evaluateAntiSlopCompliance(trimmed);
+    if (!antiSlop.passed) {
+      notes.push(`Terdeteksi AI-slop klise: ${antiSlop.hits.join(", ")}`);
     }
 
     let maxSim = 0;

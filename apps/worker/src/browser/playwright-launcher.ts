@@ -61,10 +61,11 @@ export async function launchHeadlessChromium(): Promise<Browser> {
 export async function launchIsolatedPersistentContext(options: {
   userDataDir: string;
   proxy?: { server: string; username?: string; password?: string };
+  headless?: boolean;
 }): Promise<BrowserContext> {
   const executablePath = findCachedChromiumExecutable();
   return chromium.launchPersistentContext(options.userDataDir, {
-    headless: true,
+    headless: options.headless ?? true,
     ...(executablePath ? { executablePath } : {}),
     ...(options.proxy ? { proxy: options.proxy } : {}),
     viewport: { width: 1280, height: 800 },

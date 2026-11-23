@@ -3,6 +3,7 @@ import {
   CopyBundle,
   VisualSpecBundle,
   VisualSpecBundleSchema,
+  getSkillSystemPrompt,
 } from "@seiton/shared";
 import { MODEL_ROUTING, ModelProvider } from "../models/provider";
 
@@ -24,7 +25,7 @@ export async function runDesignerAgent(
   const result = await provider.generateStructured({
     role: "DESIGNER",
     schema: VisualSpecBundleSchema,
-    systemPrompt: `You are the Designer & Animator Agent for Seiton.id (anchored with ${MODEL_ROUTING.IMAGE}). Produce VisualSpec JSON per account with platform-safe aspect ratios (9:16, 4:5, or 1:1), distinct hex accent colors, crisp headlines, and unique variationSeeds for deterministic local rendering.`,
+    systemPrompt: `${getSkillSystemPrompt("DESIGNER")} Image anchor model: ${MODEL_ROUTING.IMAGE}.`,
     userPrompt: `Create VisualSpecBundle for ${input.plan.assignments.length} assignments.`,
     contextData: {
       campaignId: input.campaignId,

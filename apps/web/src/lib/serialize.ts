@@ -1,10 +1,13 @@
 import {
+  AGENT_SKILL_STANDARDS,
   AccountRow,
   agentRuns,
   accounts,
   campaigns,
   contentAssets,
+  decryptSecret,
   getPerformanceMemory,
+  getSafeMuseSettings,
   getSharedDb,
   insights,
   isGlobalPaused,
@@ -21,11 +24,25 @@ export interface SafeAccountDto {
   profileDir: string;
   proxyDisplay: string;
   hasSession: boolean;
+  isDummyAccount: boolean;
   timezone: string;
   dailyPostLimit: number;
   postsToday: number;
   status: string;
   lastActiveAt: number | null;
+}
+
+function detectDummyAccount(row: AccountRow): boolean {
+  if (!row.encryptedSession) {
+    return false;
+  }
+  try {
+    const raw = decryptSecret(row.encryptedSession);
+    const parsed = JSON.parse(raw) as { isDummySeed?: boolean; seededAt?: string };
+    return Boolean(parsed.isDummySeed || parsed.seededAt === "2026-11-23T00:00:00.000Z");
+  } catch {
+    return false;
+  }
 }
 
 export function serializeAccount(row: AccountRow): SafeAccountDto {
@@ -37,6 +54,7 @@ export function serializeAccount(row: AccountRow): SafeAccountDto {
     profileDir: row.profileDir,
     proxyDisplay: maskProxyDisplay(row.encryptedProxy),
     hasSession: Boolean(row.encryptedSession),
+    isDummyAccount: detectDummyAccount(row),
     timezone: row.timezone,
     dailyPostLimit: row.dailyPostLimit,
     postsToday: row.postsToday,
@@ -79,14 +97,18 @@ export function buildDashboardState() {
     .limit(60)
     .all();
 
-  const metaApiKey = (process.env.META_API_KEY ?? "").trim();
-  const providerMode =
-    !metaApiKey || metaApiKey === "mock" ? "MockModelProvider" : "MetaMuseProvider";
+  const museSettings = getSafeMuseSettings(db);
+  const providerMode = museSettings.hasApiKey
+    ? "MetaMuseProvider (Live)"
+    : "MockModelProvider";
 
   return {
     globalPaused: isGlobalPaused(db),
     dryRunDefault: process.env.DRY_RUN !== "false",
     providerMode,
+    runtimeMode: "local" as const,
+    museSettings,
+    agentSkills: AGENT_SKILL_STANDARDS,
     accounts: accountRows,
     campaigns: campaignRows,
     agentRuns: agentRunRows,

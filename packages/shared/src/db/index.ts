@@ -1,10 +1,16 @@
 import Database from "better-sqlite3";
-import { count, eq } from "drizzle-orm";
+import { count, eq, inArray } from "drizzle-orm";
 import { BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
-import { encryptSecret } from "../crypto";
+import { decryptSecret, encryptSecret } from "../crypto";
 import { loadWorkspaceEnv } from "../env";
 import { ensureDataDirectories, resolveDbPath } from "../paths";
-import { PerformanceMemory, PerformanceMemorySchema, Platform } from "../schemas";
+import {
+  MuseConfigInput,
+  MuseConfigInputSchema,
+  PerformanceMemory,
+  PerformanceMemorySchema,
+  Platform,
+} from "../schemas";
 import * as schema from "./schema";
 
 export type DbInstance = BetterSQLite3Database<typeof schema> & {
@@ -13,6 +19,8 @@ export type DbInstance = BetterSQLite3Database<typeof schema> & {
 
 const GLOBAL_PAUSED_KEY = "global_paused";
 const PERFORMANCE_MEMORY_KEY = "performance_memory";
+const MUSE_CONFIG_KEY = "muse_ai_config";
+const SEED_FLAG_KEY = "seeded_accounts_initialized";
 
 const MIGRATION_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS accounts (
@@ -243,11 +251,24 @@ const DEFAULT_SEITON_ACCOUNTS: SeedAccountSpec[] = [
 ];
 
 /**
- * Seeds the 10 Seiton.id accounts across 5 platforms when the accounts table is empty.
+ * Seeds the 10 Seiton.id starter accounts once when the database is brand new (never re-seeds after purge).
  */
 export function seedDefaultSeitonAccounts(db: DbInstance): number {
+  const seedFlag = db
+    .select()
+    .from(schema.systemState)
+    .where(eq(schema.systemState.key, SEED_FLAG_KEY))
+    .get();
+  if (seedFlag) {
+    return 0;
+  }
+
   const rowCount = db.select({ total: count() }).from(schema.accounts).get()?.total ?? 0;
   if (rowCount > 0) {
+    db.insert(schema.systemState)
+      .values({ key: SEED_FLAG_KEY, value: "existing", updatedAt: Date.now() })
+      .onConflictDoNothing()
+      .run();
     return 0;
   }
 
@@ -260,6 +281,7 @@ export function seedDefaultSeitonAccounts(db: DbInstance): number {
         platform: spec.platform,
         handle: spec.handle,
         authenticated: true,
+        isDummySeed: true,
         seededAt: "2026-11-23T00:00:00.000Z",
       })
     );
@@ -281,7 +303,33 @@ export function seedDefaultSeitonAccounts(db: DbInstance): number {
       .run();
   }
 
+  db.insert(schema.systemState)
+    .values({ key: SEED_FLAG_KEY, value: "seeded", updatedAt: Date.now() })
+    .onConflictDoNothing()
+    .run();
+
   return DEFAULT_SEITON_ACCOUNTS.length;
+}
+
+/**
+ * Removes all seeded dummy accounts so the operator works strictly with real connected accounts.
+ */
+export function purgeDummyAccounts(db: DbInstance): number {
+  const dummyIds = DEFAULT_SEITON_ACCOUNTS.map((a) => a.id);
+  const res = db
+    .delete(schema.accounts)
+    .where(inArray(schema.accounts.id, dummyIds))
+    .run();
+
+  db.insert(schema.systemState)
+    .values({ key: SEED_FLAG_KEY, value: "purged", updatedAt: Date.now() })
+    .onConflictDoUpdate({
+      target: schema.systemState.key,
+      set: { value: "purged", updatedAt: Date.now() },
+    })
+    .run();
+
+  return res.changes;
 }
 
 /**
@@ -408,6 +456,144 @@ export function savePerformanceMemory(db: DbInstance, memory: PerformanceMemory)
       set: { value: JSON.stringify(validated), updatedAt },
     })
     .run();
+}
+
+export interface MuseRuntimeSettings {
+  baseUrl: string;
+  apiKey: string;
+  orchestratorModel: string;
+  specialistModel: string;
+  guardModel: string;
+  imageModel: string;
+  livePlatformAutomation: boolean;
+  liveProxyEnabled: boolean;
+}
+
+export interface SafeMuseSettings {
+  baseUrl: string;
+  hasApiKey: boolean;
+  maskedApiKey: string;
+  orchestratorModel: string;
+  specialistModel: string;
+  guardModel: string;
+  imageModel: string;
+  livePlatformAutomation: boolean;
+  liveProxyEnabled: boolean;
+}
+
+/**
+ * Reads Muse AI runtime settings (decrypting the stored API key for server/worker execution only).
+ */
+export function getMuseRuntimeSettings(db: DbInstance): MuseRuntimeSettings {
+  const defaults: MuseRuntimeSettings = {
+    baseUrl: process.env.META_API_BASE_URL || "https://api.meta.ai/v1",
+    apiKey: (process.env.META_API_KEY ?? "").trim(),
+    orchestratorModel: process.env.META_MODEL_ORCHESTRATOR || "muse-wonder-1.0",
+    specialistModel: process.env.META_MODEL_SPECIALIST || "muse-spark-1.3",
+    guardModel: process.env.META_MODEL_GUARD || "muse-ember-1.0",
+    imageModel: process.env.META_MODEL_IMAGE || "muse-image-1.0",
+    livePlatformAutomation: process.env.LIVE_PLATFORM_AUTOMATION === "true",
+    liveProxyEnabled: process.env.LIVE_PROXY_ENABLED === "true",
+  };
+
+  const row = db
+    .select()
+    .from(schema.systemState)
+    .where(eq(schema.systemState.key, MUSE_CONFIG_KEY))
+    .get();
+
+  if (!row) {
+    return defaults;
+  }
+
+  try {
+    const parsed = JSON.parse(row.value) as Partial<MuseRuntimeSettings> & {
+      encryptedApiKey?: string | null;
+    };
+    let decryptedKey = defaults.apiKey;
+    if (parsed.encryptedApiKey) {
+      decryptedKey = decryptSecret(parsed.encryptedApiKey);
+    }
+    return {
+      baseUrl: parsed.baseUrl || defaults.baseUrl,
+      apiKey: decryptedKey,
+      orchestratorModel: parsed.orchestratorModel || defaults.orchestratorModel,
+      specialistModel: parsed.specialistModel || defaults.specialistModel,
+      guardModel: parsed.guardModel || defaults.guardModel,
+      imageModel: parsed.imageModel || defaults.imageModel,
+      livePlatformAutomation:
+        parsed.livePlatformAutomation ?? defaults.livePlatformAutomation,
+      liveProxyEnabled: parsed.liveProxyEnabled ?? defaults.liveProxyEnabled,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+/**
+ * Returns non-secret Muse AI settings safe for sending to UI / API clients.
+ */
+export function getSafeMuseSettings(db: DbInstance): SafeMuseSettings {
+  const rt = getMuseRuntimeSettings(db);
+  const hasRealKey = Boolean(rt.apiKey && rt.apiKey !== "mock");
+  const maskedApiKey = hasRealKey
+    ? `${rt.apiKey.slice(0, 6)}••••${rt.apiKey.slice(-4)}`
+    : "Belum dikonfigurasi (Fallback / Edge AI)";
+
+  return {
+    baseUrl: rt.baseUrl,
+    hasApiKey: hasRealKey,
+    maskedApiKey,
+    orchestratorModel: rt.orchestratorModel,
+    specialistModel: rt.specialistModel,
+    guardModel: rt.guardModel,
+    imageModel: rt.imageModel,
+    livePlatformAutomation: rt.livePlatformAutomation,
+    liveProxyEnabled: rt.liveProxyEnabled,
+  };
+}
+
+/**
+ * Saves Muse AI settings into SQLite system_state, encrypting the API key with AES-256-GCM.
+ */
+export function saveMuseSettings(
+  db: DbInstance,
+  input: MuseConfigInput
+): SafeMuseSettings {
+  const validated = MuseConfigInputSchema.parse(input);
+  const current = getMuseRuntimeSettings(db);
+  const nextApiKey =
+    validated.apiKey !== undefined && validated.apiKey.length > 0
+      ? validated.apiKey
+      : current.apiKey;
+
+  const encryptedApiKey =
+    nextApiKey && nextApiKey !== "mock" ? encryptSecret(nextApiKey) : null;
+
+  const stored = {
+    baseUrl: validated.baseUrl,
+    encryptedApiKey,
+    orchestratorModel: validated.orchestratorModel,
+    specialistModel: validated.specialistModel,
+    guardModel: validated.guardModel,
+    imageModel: validated.imageModel,
+    livePlatformAutomation: validated.livePlatformAutomation,
+    liveProxyEnabled: validated.liveProxyEnabled,
+  };
+
+  db.insert(schema.systemState)
+    .values({
+      key: MUSE_CONFIG_KEY,
+      value: JSON.stringify(stored),
+      updatedAt: Date.now(),
+    })
+    .onConflictDoUpdate({
+      target: schema.systemState.key,
+      set: { value: JSON.stringify(stored), updatedAt: Date.now() },
+    })
+    .run();
+
+  return getSafeMuseSettings(db);
 }
 
 export { and, desc, eq, inArray } from "drizzle-orm";

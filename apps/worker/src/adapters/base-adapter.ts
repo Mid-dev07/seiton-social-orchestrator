@@ -6,6 +6,7 @@ import {
   DbInstance,
   PLATFORM_LIMITS,
   Platform,
+  decryptSecret,
   ensureDir,
   resolveDataPath,
 } from "@seiton/shared";
@@ -35,6 +36,7 @@ export interface AdapterComposePayload {
   mediaAbsolutePath?: string;
   mediaSha256?: string;
   dryRun: boolean;
+  livePlatformAutomation?: boolean;
   simulateChallenge?: boolean;
 }
 
@@ -335,15 +337,42 @@ export abstract class BasePlatformAdapter implements PlatformAdapter {
   ): Promise<{ ok: boolean; challengeScreenshotPath?: string; reason?: string }> {
     this.validatePayload(payload);
 
+    const useLivePlatform =
+      Boolean(payload.livePlatformAutomation) ||
+      process.env.LIVE_PLATFORM_AUTOMATION === "true";
+
     if (payload.simulateChallenge) {
       await page.setContent(this.buildChallengeMockHtml(payload), { waitUntil: "load" });
-    } else if (
-      !payload.dryRun &&
-      process.env.LIVE_PLATFORM_AUTOMATION === "true"
-    ) {
+    } else if (useLivePlatform) {
+      if (payload.account.encryptedSession) {
+        try {
+          const rawSession = decryptSecret(payload.account.encryptedSession);
+          const parsedSession = JSON.parse(rawSession) as
+            | Array<{ name: string; value: string; domain?: string; path?: string }>
+            | { cookies?: Array<{ name: string; value: string; domain?: string; path?: string }> };
+          const cookieList = Array.isArray(parsedSession)
+            ? parsedSession
+            : Array.isArray(parsedSession.cookies)
+              ? parsedSession.cookies
+              : [];
+          const validCookies = cookieList.filter((c) => c.name && c.value && c.domain);
+          if (validCookies.length > 0) {
+            await page.context().addCookies(
+              validCookies.map((c) => ({
+                name: c.name,
+                value: c.value,
+                domain: c.domain!,
+                path: c.path || "/",
+              }))
+            );
+          }
+        } catch {
+          // Non-cookie metadata JSON — rely on persistent userDataDir cookies
+        }
+      }
       await page.goto(this.selectors.composerUrl, {
         waitUntil: "domcontentloaded",
-        timeout: 20000,
+        timeout: 25000,
       });
     } else {
       await page.setContent(this.buildComposerMockHtml(payload), { waitUntil: "load" });
@@ -363,7 +392,7 @@ export abstract class BasePlatformAdapter implements PlatformAdapter {
       };
     }
 
-    if (!payload.dryRun && process.env.LIVE_PLATFORM_AUTOMATION === "true") {
+    if (useLivePlatform) {
       for (const loginSelector of this.selectors.loginIndicators) {
         const count = await page.locator(loginSelector).count().catch(() => 0);
         if (count > 0) {

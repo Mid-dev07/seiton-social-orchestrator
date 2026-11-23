@@ -3,6 +3,7 @@ import {
   Platform,
   ResearchBrief,
   ResearchBriefSchema,
+  getSkillSystemPrompt,
 } from "@seiton/shared";
 import { ModelProvider } from "../models/provider";
 
@@ -20,8 +21,7 @@ export async function runResearcherAgent(
   const result = await provider.generateStructured({
     role: "RESEARCH",
     schema: ResearchBriefSchema,
-    systemPrompt:
-      "You are the Seiton.id Researcher Agent. Analyze platform trends, Indonesian UMKM digitalization pain points, and safe promotional angles for official premium software subscriptions.",
+    systemPrompt: getSkillSystemPrompt("RESEARCH"),
     userPrompt: `Analyze campaign brief: "${input.commandPrompt}" across platforms [${input.targetPlatforms.join(", ")}].`,
     contextData: {
       campaignId: input.campaignId,

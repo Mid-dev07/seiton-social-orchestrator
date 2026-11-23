@@ -4,6 +4,7 @@ import {
   QAEvaluation,
   QAEvaluationSchema,
   evaluateCampaignAntiDuplicate,
+  getSkillSystemPrompt,
 } from "@seiton/shared";
 import { ModelProvider } from "../models/provider";
 
@@ -36,8 +37,7 @@ export async function runQaGateAgent(
   const guardResult = await provider.generateStructured({
     role: "QA",
     schema: QAEvaluationSchema,
-    systemPrompt:
-      "You are the Automated QA & Anti-Duplicate Gate (Muse Ember). Enforce deterministic similarity < 0.60, character limits, media hash uniqueness, and policy safety.",
+    systemPrompt: getSkillSystemPrompt("QA"),
     userPrompt: `Evaluate QA batch for campaign ${input.campaignId} (attempt ${input.attempt}).`,
     contextData: {
       campaignId: input.campaignId,

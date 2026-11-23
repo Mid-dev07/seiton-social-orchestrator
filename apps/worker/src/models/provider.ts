@@ -3,6 +3,7 @@ import {
   CopyBundleSchema,
   CopyItem,
   InsightReportSchema,
+  MuseRuntimeSettings,
   PLATFORM_LIMITS,
   Platform,
   QAEvaluationSchema,
@@ -92,8 +93,13 @@ export class MetaMuseProvider implements ModelProvider {
   readonly name = "MetaMuseProvider" as const;
   private readonly baseUrl: string;
   private readonly apiKey: string;
+  private readonly routing: Record<AgentRole, string>;
 
-  constructor(baseUrl?: string, apiKey?: string) {
+  constructor(
+    baseUrl?: string,
+    apiKey?: string,
+    modelOverrides?: Partial<Record<AgentRole, string>>
+  ) {
     this.baseUrl = (baseUrl ?? process.env.META_API_BASE_URL ?? "https://api.meta.ai/v1").replace(
       /\/+$/,
       ""
@@ -102,12 +108,16 @@ export class MetaMuseProvider implements ModelProvider {
     if (!this.apiKey || this.apiKey === "mock") {
       throw new Error("MetaMuseProvider requires a non-mock META_API_KEY");
     }
+    this.routing = {
+      ...MODEL_ROUTING,
+      ...(modelOverrides ?? {}),
+    };
   }
 
   async generateStructured<TSchema extends z.ZodTypeAny>(
     request: StructuredGenerationRequest<TSchema>
   ): Promise<StructuredGenerationResult<z.infer<TSchema>>> {
-    const modelUsed = MODEL_ROUTING[request.role];
+    const modelUsed = this.routing[request.role];
     const endpoint = `${this.baseUrl}/chat/completions`;
     const bodyPayload = {
       model: modelUsed,
@@ -550,12 +560,23 @@ export class MockModelProvider implements ModelProvider {
 }
 
 /**
- * Selects MetaMuseProvider when a real META_API_KEY is configured, or falls back deterministically to MockModelProvider.
+ * Selects MetaMuseProvider when a real META_API_KEY is configured (in DB settings or env),
+ * or falls back deterministically to MockModelProvider.
  */
-export function createModelProvider(): ModelProvider {
-  const apiKey = (process.env.META_API_KEY ?? "").trim();
+export function createModelProvider(settings?: MuseRuntimeSettings): ModelProvider {
+  const apiKey = (settings?.apiKey ?? process.env.META_API_KEY ?? "").trim();
+  const baseUrl = settings?.baseUrl ?? process.env.META_API_BASE_URL;
   if (!apiKey || apiKey === "mock") {
     return new MockModelProvider();
   }
-  return new MetaMuseProvider(process.env.META_API_BASE_URL, apiKey);
+  return new MetaMuseProvider(baseUrl, apiKey, settings ? {
+    ORCHESTRATOR: settings.orchestratorModel,
+    INSIGHT: settings.orchestratorModel,
+    RESEARCH: settings.specialistModel,
+    STRATEGY: settings.specialistModel,
+    COPY: settings.specialistModel,
+    DESIGNER: settings.specialistModel,
+    QA: settings.guardModel,
+    IMAGE: settings.imageModel,
+  } : undefined);
 }

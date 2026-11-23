@@ -4,6 +4,7 @@ import {
   CampaignPlanSchema,
   Platform,
   ResearchBrief,
+  getSkillSystemPrompt,
 } from "@seiton/shared";
 import { ModelProvider } from "../models/provider";
 
@@ -22,8 +23,7 @@ export async function runStrategistAgent(
   const result = await provider.generateStructured({
     role: "STRATEGY",
     schema: CampaignPlanSchema,
-    systemPrompt:
-      "You are the Social Media Strategist Agent. Assign each account a distinct content angle, staggered schedule ISO timestamp, media format (IMAGE or VIDEO), and unique variationSeed so zero accounts share duplicate messaging.",
+    systemPrompt: getSkillSystemPrompt("STRATEGY"),
     userPrompt: `Build a cross-account CampaignPlan for ${input.accounts.length} accounts based on research trends.`,
     contextData: {
       campaignId: input.campaignId,

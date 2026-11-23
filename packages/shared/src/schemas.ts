@@ -8,6 +8,7 @@ export type Platform = z.infer<typeof PlatformSchema>;
 export const AccountStatusSchema = z.enum([
   "IDLE",
   "ACTIVE",
+  "ONBOARDING_OTP",
   "CHALLENGE_PAUSED",
   "RATE_LIMITED",
   "DISABLED",
@@ -230,3 +231,31 @@ export const KillSwitchInputSchema = z.object({
   reason: z.string().trim().max(240).optional(),
 });
 export type KillSwitchInput = z.infer<typeof KillSwitchInputSchema>;
+
+export const MuseConfigInputSchema = z.object({
+  baseUrl: z.string().trim().url("Base URL harus valid (misal https://api.meta.ai/v1)"),
+  apiKey: z.string().trim().optional(),
+  orchestratorModel: z.string().trim().min(2).default("muse-wonder-1.0"),
+  specialistModel: z.string().trim().min(2).default("muse-spark-1.3"),
+  guardModel: z.string().trim().min(2).default("muse-ember-1.0"),
+  imageModel: z.string().trim().min(2).default("muse-image-1.0"),
+  livePlatformAutomation: z.boolean().default(true),
+  liveProxyEnabled: z.boolean().default(false),
+});
+export type MuseConfigInput = z.infer<typeof MuseConfigInputSchema>;
+
+export const OnboardingActionSchema = z.object({
+  action: z.enum(["start_onboarding", "submit_otp", "refresh_screenshot", "complete_manual"]),
+  accountId: z.string().optional(),
+  platform: PlatformSchema.optional(),
+  mode: z.enum(["signup", "login"]).default("signup"),
+  email: z.string().trim().email("Email wajib valid").optional(),
+  handle: z.string().trim().min(2).optional(),
+  displayName: z.string().trim().min(2).optional(),
+  password: z.string().min(6).optional(),
+  groupTag: z.string().trim().default("seiton-umkm"),
+  proxyUrl: z.string().trim().optional(),
+  otpCode: z.string().trim().min(3).max(16).optional(),
+  headless: z.boolean().default(false),
+});
+export type OnboardingActionInput = z.infer<typeof OnboardingActionSchema>;

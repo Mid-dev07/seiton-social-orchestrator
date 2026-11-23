@@ -3,6 +3,7 @@ import {
   CopyBundle,
   CopyBundleSchema,
   ResearchBrief,
+  getSkillSystemPrompt,
 } from "@seiton/shared";
 import { ModelProvider } from "../models/provider";
 
@@ -22,8 +23,7 @@ export async function runCopywriterAgent(
   const result = await provider.generateStructured({
     role: "COPY",
     schema: CopyBundleSchema,
-    systemPrompt:
-      "You are the Copywriter Agent for Seiton.id. Write natural Indonesian copy per account respecting platform character limits (X <= 280, Threads <= 500, IG/TikTok <= 2200) and ensuring Jaccard/Cosine similarity across accounts remains strictly < 0.60.",
+    systemPrompt: getSkillSystemPrompt("COPY"),
     userPrompt: input.qaFeedback
       ? `Rewrite copy bundle resolving QA feedback: ${input.qaFeedback}`
       : `Generate distinct CopyBundle items for ${input.plan.assignments.length} scheduled assignments.`,

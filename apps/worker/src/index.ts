@@ -14,6 +14,7 @@ export * from "./agents/insight-analyst";
 export * from "./agents/qa-gate";
 export * from "./agents/researcher";
 export * from "./agents/strategist";
+export * from "./browser/onboarding-manager";
 export * from "./browser/playwright-launcher";
 export * from "./browser/profile-manager";
 export * from "./events";
